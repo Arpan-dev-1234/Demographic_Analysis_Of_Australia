@@ -1,0 +1,680 @@
+---
+title: "Characterising the constituents for the House of Representative members in Victoria"
+subtitle: ETC5512 Assignment 2, Master of Business Analytics
+author: Prepared by Arpan Sarkar, 32559844, asar0035@student.monash.edu 
+date: '`r Sys.Date()`'
+bibliography: references.bib
+output: 
+  html_document:
+    css: monashreport.css
+    includes:
+      before_body: header.html
+  
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( echo=TRUE,
+                      messages = FALSE, 
+                      warning = FALSE)
+library(tidyverse)
+library(sf)
+library(here)
+library(naniar)
+library(polite)
+library(stringr)
+library(unglue)
+library(kableExtra)
+```
+
+# 🔍 Analysis
+
+## Research Question 1
+### How many people lived in each electoral division of interest?
+
+```{r div, eval=FALSE, echo=TRUE}
+library(tidyverse)
+library(sf)
+vic_map <- read_sf(here::here("data/E_AUGFN3_region.shp")) %>% 
+   # to match up with election data
+   mutate(DivisionNm = toupper(Elect_div)) 
+sa1_geomap <- read_sf(here::here("data/census2016_eiuwa_vic_short.gpkg"), 
+                  layer = "census2016_eiuwa_vic_sa1_short") %>%
+mutate(centroid = map(geom, st_centroid),
+centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+which = as.integer(st_intersects(centroid, vic_map)),
+Elect_div = ifelse(is.na(which),
+"None",
+vic_map$Elect_div[which])) %>%
+select(sa1_7digitcode_2016, Elect_div)
+```
+
+
+```{r div2, eval=FALSE, echo=TRUE}
+sa1_digitcode1<-sa1_geomap%>% filter (Elect_div %in% c('Melbourne','Kooyong','Macnamara','Chisholm','Higgins','Goldstein','Hotham'))
+
+sa1_digitcode1<- as_tibble(sa1_digitcode)
+
+sa1_digitcode1<- sa1_digitcode1 %>% select(- geom)
+
+```
+
+
+```{r pathsu,eval=FALSE, echo=TRUE}
+census_path <- here::here("data/2016 Census GCP All Geographies for VIC/{geo}/VIC")
+
+SA1_paths <- glue::glue(census_path, "/2016Census_G04{alpha}_VIC_SA1.csv", 
+                        geo = "SA1", alpha = c("A", "B"))
+```
+
+
+```{r clean1, eval=FALSE, echo=TRUE}
+clean_G04P <- function(df, id) {
+   df %>% 
+      pivot_longer(-{{id}},
+                   names_to = "category",
+                   values_to = "count") %>% 
+      filter(str_detect(category, "P")& !str_detect(category,"Tot") & !str_detect(category, "0_4") & !str_detect(category, "5_9") & !str_detect(category, "10_14") & !str_detect(category, "15_19") & !str_detect(category, "20_24") &  !str_detect(category, "25_29") & !str_detect(category, "30_34") & !str_detect(category, "35_39") & !str_detect(category, "40_44") & !str_detect(category, "45_49") & !str_detect(category, "50_54") & !str_detect(category, "55_59") & !str_detect(category, "60_64") &!str_detect(category, "65_69") & !str_detect(category, "70_74") & !str_detect(category, "75_79"))%>%
+      unglue_unnest(category, 
+                   c("{}_{}_{Age=\\d+}_{}"), 
+                   remove = FALSE)
+}
+```
+
+```{r data_tot_P, eval=FALSE, echo=TRUE}
+SA1_G04tidytot_P <- map_dfr(SA1_paths, ~{
+                              df <- read.csv(.x)
+                              clean_G04P(df, SA1_7DIGITCODE_2016)
+                           })
+
+```
+
+
+```{r write_data, eval=FALSE, echo=TRUE}
+write_csv(SA1_G04tidytot_P,"data/SA1_G04tidytot_P.csv")
+```
+
+
+
+```{r totp, message=FALSE}
+SA1_G04tidytot_P<- read_csv("data/SA1_G04tidytot_P.csv")
+```
+
+```{r}
+Aust_tot_pop<-SA1_G04tidytot_P%>%group_by(Elect_div)%>% summarise(Tot_P=sum(count))
+
+#Table using Kableextra function
+
+SA1_G04tidytot_P%>%group_by(Elect_div)%>% summarise(Tot_P=sum(count))%>%kbl(caption="Total Population In Each Electoral Division 2016",table.attr="style='width:70%;'") %>%
+  kable_paper("hover",full_width = T,html_font = "Cambria", position= "left" )
+
+```
+
+
+
+```{r}
+ggplot(Aust_tot_pop,aes(x=Elect_div,y=Tot_P ))+
+  geom_bar(stat = 'identity')+
+   xlab("Total_Population")+
+   ylab("Division Name")+
+   ggtitle("Population Distribution Division Wise Chart1")
+
+```
+
+- **Among 7 electoral division, Melborne has highest population of 181375 and Goldstein has the least of 137152.**
+- **Chisholm and Macnamara has almost same population whereas Higgins and Kooyong have similar population with little difference.**
+- **Melbourne's population is almost 18k more than that of 2nd most populated division i.e. Hotham.**
+
+
+
+## Research Question 2
+### Show the age distribution (omitting those 80 years old or greater) of each electoral division of interest by plotting a barplot like below. State three interesting observations regarding the plot below with a possibly reason why you see such observations using knowledge about the electoral division (if you do not know, search the internet to find out).
+
+
+
+```{r paths1, eval=FALSE, echo=TRUE}
+census_path <- here::here("data/2016 Census GCP All Geographies for VIC/{geo}/VIC")
+
+SA1_paths <- glue::glue(census_path, "/2016Census_G04{alpha}_VIC_SA1.csv", 
+                        geo = "SA1", alpha = c("A", "B"))
+```
+
+
+
+```{r clean2, eval=FALSE, echo=TRUE}
+##Cleaning Function
+
+clean_G04P2 <- function(df, id) {
+   df %>% 
+      pivot_longer(-{{id}},
+                   names_to = "category",
+                   values_to = "count") %>% 
+      filter(str_detect(category, "P")& !str_detect(category,"Tot") & !str_detect(category, "0_4") & !str_detect(category, "5_9") & !str_detect(category, "10_14") & !str_detect(category, "15_19") & !str_detect(category, "20_24") &  !str_detect(category, "25_29") & !str_detect(category, "30_34") & !str_detect(category, "35_39") & !str_detect(category, "40_44") & !str_detect(category, "45_49") & !str_detect(category, "50_54") & !str_detect(category, "55_59") & !str_detect(category, "60_64") &!str_detect(category, "65_69") & !str_detect(category, "70_74") & !str_detect(category, "75_79" & !str_detect(category, "80_84") & !str_detect(category, "85_89") & !str_detect(category, "90_94")& !str_detect(category, "95_99") & !str_detect(category, "100"))%>%
+      unglue_unnest(category, 
+                   c("{}_{}_{Age=\\d+}_{}"), 
+                   remove = FALSE)
+}
+```
+
+
+```{r data1, eval=FALSE, echo=TRUE}
+##Data Cleansing
+
+SA1_G04tidyP <- map_dfr(SA1_paths, ~{
+                              df <- read.csv(.x)
+                              clean_G04P1(df, SA1_7DIGITCODE_2016)
+                           })
+
+```
+
+
+```{r tidy1, eval=FALSE, echo=TRUE}
+SA1_G04tidyP3<-SA1_G04tidyp%>% filter(as.integer(Age)<80)%>% select(SA1_7DIGITCODE_2016,count,Age)
+```
+
+```{r join1, eval=FALSE, echo=TRUE}
+SA1_G04tidyp4<- left_join(sa1_digitcode1,SA1_G04tidyP3, by =c("sa1_7digitcode_2016"="SA1_7DIGITCODE_2016"))%>% select(sa1_7digitcode_2016,Elect_div,count,Age)
+```
+
+
+```{r write2, eval=FALSE, echo=TRUE}
+write_csv(SA1_G04tidyp4,"data/SA1_G04tidyp4.csv")
+```
+
+
+
+```{r 18-80, message=FALSE}
+SA1_G04tidyp4<-read_csv("data/SA1_G04tidyp4.csv")
+```
+
+
+```{r}
+ggplot(SA1_G04tidyp4,aes(x=as.numeric(Age),y=(count/sum(count))*600 ))+
+  geom_bar(stat = 'identity')+
+    facet_grid(Elect_div~ ., scales = 'free')+theme(strip.placement = 'outside', text = element_text(size = 8, lineheight = 2))+
+   xlab("Age")+
+   ylab("Percentage")+
+   ggtitle("Age Distribution Division Wise Chart2")
+```
+
+- **Melbourne, age distribution of population is different to other divisions. Infants below 10 years are little and the same above 10 is eve less and reducing till 17 to 18 years range, when it takes a sudden spike and rises to its peak range at 23 years to 27 years. Thereafter it falls like right side of a tapered bell curve and post 40 it maintains a low population density which further gets reduced to a very very little population density in the range of 60 years to 80 years. So, the major population distribution is between 17 year to 40 years range.**
+
+- **Higgins and Macnamara have very similar age distribution of population. Unlike, Melbourne, density below 10 years is low but more than Melbourne and it falls at a slower rate till 16 to 17 years range. Thereafter it starts rising like a tappered bell curve with maximum distribution at early 30s and then slopes down at same rate as that of rise  till start of 40s. Thereafter, although the density gets reduced as the age range increases, but the reduction rate is very less, indicating that there are population among aged range as well. Of course, Higgin's density in this range is more than that of Macnamara.**
+
+- **The age distribution of population pattern is some what similar in Goldstein and Kooyong. While in Goldstein, the rise is visible from  0 year to 1 year range and takes its peak at 10 to 11 years range and then falls at the same rate till early 30s and again rises at same pace till 42 to 43 years range and again  it is tappered down very gently till 78 to 80 years range, where also the division has good population. In case of Kooyong, pattern is similar but the first wave has the peak in the range of 23 to 24 years and falls till 37 to 40 years and the wave rises again with peak in the range of 46 to 48 years. There after the density is tappered down very gently with substantial population in the range of 70 to 80 years.**
+
+#### Explanation
+- **Melbourne, Higgins, Macnamara have maximum population density in the younger adult range. These divisions have more industries and provide better potentiality and facilities with education , employability etc. The younger generation is naturally attracted and lives in this division in more numbers in comparison to other divisions.**
+- **Divisions like Chisholm, Kooyong maintains good density in infant to childhood range and also adult to old age range, indicating that these divisions are conducive for living in general with little pollution and with better medical facilities etc.**
+
+
+## Research Question 3
+### What are the percentages of Australian citizens for each electoral division of interest? Why do you think the percentage of Australian citizens is lower for Melbourne, Hotham and Macnamara?
+
+```{r}
+library(tidyverse)
+library(sf)
+vic_map <- read_sf(here::here("data/E_AUGFN3_region.shp")) %>% 
+   # to match up with election data
+   mutate(DivisionNm = toupper(Elect_div)) 
+sa1_geomap <- read_sf(here::here("data/census2016_eiuwa_vic_short.gpkg"), 
+                  layer = "census2016_eiuwa_vic_sa1_short") %>%
+mutate(centroid = map(geom, st_centroid),
+centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+which = as.integer(st_intersects(centroid, vic_map)),
+Elect_div = ifelse(is.na(which),
+"None",
+vic_map$Elect_div[which])) %>%
+select(sa1_7digitcode_2016, Elect_div)
+```
+
+```{r}
+sa1_digitcode1<-sa1_geomap%>% filter (Elect_div %in% c('Melbourne','Kooyong','Macnamara','Chisholm','Higgins','Goldstein','Hotham'))%>% mutate(sa1_7digitcode_2016=as.integer(sa1_7digitcode_2016))
+
+sa1_digitcode1<- as_tibble(sa1_digitcode1)
+
+sa1_digitcode1<- sa1_digitcode1%>% select(sa1_7digitcode_2016, Elect_div)
+
+sa1_digitcode1$sa1_7digitcode_2016<-  as.character( sa1_digitcode1$sa1_7digitcode_2016)
+```
+
+
+```{r}
+census_path <- here::here("data/2016 Census GCP All Geographies for VIC/{geo}/VIC")
+
+SA1_G01paths <- glue::glue(census_path, "/2016Census_G01_VIC_SA1.csv", 
+                        geo = "SA1")
+```
+
+
+
+```{r aus1, message=FALSE}
+SA1_G01tidy <- read_csv(SA1_G01paths)
+
+SA1_G01tidy1<-SA1_G01tidy%>% select(Australian_citizen_P,SA1_7DIGITCODE_2016)
+
+SA1_G01tidy1$SA1_7DIGITCODE_2016<-  as.character( SA1_G01tidy1$SA1_7DIGITCODE_2016)
+
+SA1_G01tidyjoin<- left_join(data.frame(sa1_digitcode1),SA1_G01tidy1,  by =c("sa1_7digitcode_2016"="SA1_7DIGITCODE_2016")) 
+
+SA1_G01tidyjoin<- as_tibble(SA1_G01tidyjoin)
+
+
+Aust_citizen_p<-SA1_G01tidyjoin%>% group_by(Elect_div)%>% summarise(Tot_Aust_Citizen_P= sum(Australian_citizen_P))
+
+Aust_totandcitizen<- left_join(Aust_tot_pop,Aust_citizen_p)
+
+Aust_totandcitizen<- Aust_totandcitizen%>% mutate(Percentage_aust= (Tot_Aust_Citizen_P/Tot_P)*100)
+
+
+```
+
+```{r}
+#Table using Kableextra function
+
+Aust_totandcitizen%>% mutate(Percentage_aust= (Tot_Aust_Citizen_P/Tot_P)*100)%>%kbl(caption="Percentage Of Australian Citizen In Each Electoral Division",table.attr="style='width:70%;'") %>%
+  kable_paper("hover",full_width = T,html_font = "Cambria", position= "left" )
+```
+
+
+
+```{r}
+ggplot(Aust_totandcitizen,aes(x=Elect_div,y= Percentage_aust ))+
+  geom_bar(stat = 'identity')+
+   xlab("Division Name")+
+   ylab("Percentage")+
+   ggtitle("Percentag Of Australian Citizen Chart3")
+```
+
+
+
+#### Percentage of Adult Australian Citizens in respect of total population in the division is:
+- **Melbourne- 19.44** 
+- **Hotham- 24.76** 
+- **Macnamara- 24.02**
+
+#### Probable Reasons:
+- **These divisions provide more facilities that attract others to migrate there.**
+- **Have more industry for providing easy employment.**
+- **Have more natural resources.**
+- **Have more educational institutes, etc.**
+
+
+## Research Question 4
+### What is an estimate of adult (i.e. aged 18 years old or over) Australian citizens in each electoral division of interest? State your assumptions for your estimate.
+
+
+
+```{r elect, message=FALSE}
+election2019<-read_csv("data/elector-count-election-2016.csv")
+
+election2019$`20-24`<- as.character(election2019$`20-24`)
+
+election2019$`25-29`<- as.character(election2019$`25-29`)
+
+election2019<-election2019%>%
+pivot_longer(cols = -Indicators,
+                   names_to = "Age",
+                   values_to = "count")
+
+election2019$count<-as.integer(election2019$count)
+
+
+
+```
+
+```{r elc, message=FALSE}
+
+Election<- election2019%>% select(Indicators,count)%>%filter(Indicators %in% c('Melbourne','Kooyong','Macnamara','Chisholm','Higgins','Goldstein','Hotham'))%>%group_by(Indicators)%>% summarise(above18_aust_pop= sum(count))
+
+
+Election1<-Election%>% mutate(Elect_div= ifelse(Indicators =='MELBOURNE','Melbourne',ifelse( Indicators=='KOOYONG', 'Kooyong',if_else(Indicators =='MACNAMARA' , 'Macnamara', ifelse(Indicators=='CHISHOLM', 'Chisholm',ifelse(Indicators=='HIGGINS', 'Higgins', ifelse(Indicators=='GOLDSTEIN','Goldstein',ifelse( Indicators =='HOTHAM','Hotham',Indicators))))))))
+
+Aust_18plus_pop<-SA1_G04tidyp4%>%group_by(Elect_div)%>% summarise(Tot_18plus_pop= sum(count))
+
+Election1$Elect_div<- as.character(Election1$Elect_div)
+
+
+##Joining table Election 2016 data and Total Population Data
+Aust_18plus_citi_totp<- left_join(Aust_tot_pop,Election1)
+
+Aust_18plus_citi_totp<- Aust_18plus_citi_totp%>%mutate(percentage_18_above= (Aust_18plus_citi_totp$above18_aust_pop/Aust_18plus_citi_totp$Tot_P)*100)
+
+Aust_18plus_citi_totp<- Aust_18plus_citi_totp%>% select(- Indicators)
+
+```
+
+```{r}
+ggplot(Aust_18plus_citi_totp,aes(x=Elect_div, y= percentage_18_above))+
+   geom_bar(stat = 'identity')+
+   xlab("Division Name")+
+   ylab("Percentage")+
+   ggtitle("Percentage of australian citizen 18 years and above  Chart4")
+```
+
+```{r}
+
+#Table using Kableextra function
+
+Aust_18plus_citi_totp%>%mutate(percentage_18_above= (Aust_18plus_citi_totp$above18_aust_pop/Aust_18plus_citi_totp$Tot_P)*100)%>%kbl(caption="Percentage of australian citizen 18 years and above",table.attr="style='width:70%;'") %>%
+  kable_paper("hover",full_width = T,html_font = "Cambria", position= "left" )
+```
+#### Estimate of adult (18 years or more) Australian citizens in respect of total population with age 18 and above in the electoral divisions:
+
+- **Chisholm: 97434**
+- **Goldstein: 104931**
+- **Higgins: 104615**
+- **Hotham: 100010**
+- **Kooyong: 100108**
+- **Macnamara (as per below estimation) : 104822**
+- **Melbourne: 111628**
+
+#### Assumptions for the estimate for Macnamara:
+
+#### From table data availed the following details:
+- Total population **492051**
+- Average/Mean of the percentages of 18 years and above (Australian citizen) for divisions excluding    Macnamara coming as, **127.82/6= 21.30**
+- So, 18 and above Australian citizens estimated as **492051X.21.30X.01= 104822**
+
+
+
+
+
+## Research Question 5
+### The political members would like to know the composition of ethnic background of their constituents. Show the top 10 reported ancestry for each electoral division of interest with an appropriate graph. State one interesting observation from your graph.
+
+
+```{r}
+##clean function
+
+clean_G08 <- function(df, id) {
+   df %>% 
+      pivot_longer(-{{id}},
+                   names_to = "category",
+                   values_to = "count") %>% filter(str_detect(category,"Resp"))
+}
+```
+
+
+```{r paths}
+census_path <- here::here("data/2016 Census GCP All Geographies for VIC/{geo}/VIC")
+
+SA1_G08paths <- glue::glue(census_path, "/2016Census_G08_VIC_SA1.csv", 
+                        geo = "SA1")
+```
+
+
+```{r}
+#Data cleaning
+
+SA1_G08tidy <- map_dfr(SA1_G08paths, ~{
+                              df <- read.csv(.x)
+                              clean_G08(df, SA1_7DIGITCODE_2016)
+})
+
+SA1_G08tidy<-SA1_G08tidy %>% separate(category, c("Ethnicity", "Category"), "_")
+
+SA1_G08tidy1<-SA1_G08tidy %>% mutate(Ethnicity = case_when(Category == "Abor"  ~ "Aust_Abor",Category != "Abor" ~ Ethnicity))
+
+SA1_G08tidy1$SA1_7DIGITCODE_2016<- as.character(SA1_G08tidy1$SA1_7DIGITCODE_2016)
+
+```
+
+
+
+```{r}
+sa1_digitcode1<- sa1_digitcode1%>% select(sa1_7digitcode_2016, Elect_div)
+sa1_digitcode1$sa1_7digitcode_2016<- as.character(sa1_digitcode1$sa1_7digitcode_2016)
+SA1_G08tidyjoin<- left_join(sa1_digitcode1,SA1_G08tidy1, by =c("sa1_7digitcode_2016"="SA1_7DIGITCODE_2016"))%>% select(sa1_7digitcode_2016,Elect_div,count,Ethnicity)
+
+SA1_G08tidyjoin<- as_tibble(SA1_G08tidyjoin)
+
+SA1_G08tidyjoin<- SA1_G08tidyjoin%>% filter(! SA1_G08tidyjoin$Ethnicity %in% c( "Tot", "Ancestry" ))
+```
+
+
+
+```{r}
+
+ggplot(SA1_G08tidyjoin, aes(y= (count/sum(count))*100 ,x= Ethnicity, fill= Ethnicity))+
+   geom_bar(stat = 'identity')+
+   scale_color_discrete(name = "Ethnicity")+
+   facet_grid(Elect_div ~.)+
+   theme(strip.placement = 'outside', text = element_text(size = 8, lineheight = 2))+
+   theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
+   ylab("Percentage")+
+   xlab("Ethnicity")+
+   ggtitle("Composition of ethnic background  Chart5")
+   
+          
+```
+
+
+
+
+```{r ethni, message=FALSE}
+
+SA1_G08tidyjoin%>% arrange(- count) %>% group_by(Elect_div,Ethnicity)%>%summarise(count= sum(count))%>% select(Ethnicity, count)%>% top_n(n=10, wt= count )%>%
+ggplot(aes(x= (count/sum(count))*100, y= reorder(Ethnicity,count), fill= Ethnicity))+
+   geom_bar(stat = 'identity')+
+   facet_wrap(~ Elect_div, scales = 'free')+
+   theme(strip.placement = 'outside', text = element_text(size = 8, lineheight = 2))+
+   theme(axis.text.x = element_text( vjust = 0.5))+
+   xlab("Percentage")+
+   ylab("Ethnicity")+
+   ggtitle("Top 10 ethnic backgrounds  Chart6")
+
+```
+
+
+- **Australian Aborigins are missing in the demography in all the divisions.**
+- **In most divisions English community has the highest presence among others except in Cheksholm and Hotham where Chineese presence is highest.**
+- **Although Australians have subatantial presence in all divisions, but could not become as the highest presence yet.**
+
+## Research Question 6
+### What are the distribution of religious background in each electoral district of interest? Show this by using a plot. Report one interesting observation from what you see.
+
+```{r}
+library(sf)
+library(rgdal)
+library(tidyverse)
+
+
+
+cldh <- read_sf("data/census2016_cldh_vic_short.gpkg")
+
+```
+
+
+```{r}
+cldh1<- cldh%>% select(-geom)
+cldh1<- as_tibble(cldh1)
+cldh1<- cldh1%>% select(-geom)
+```
+
+
+```{r}
+#Tidy data
+
+cldh2<- cldh1%>% 
+      pivot_longer(cols = -ced_code_2016,
+                   names_to = "category",
+                   values_to = "count") %>% filter(!str_detect(category,"Tot") & !str_detect(category,"One") & !str_detect(category,"SB") & !str_detect(category,"Religious") & !str_detect(category,"M") & !str_detect(category,"F"))%>% 
+   separate(category, c("Religion", "category"), "_")
+cldh2<- cldh2%>% mutate(Religiontype = case_when(Religion == "Othr" ~ "Other", Religion != "Othr" ~ Religion))
+
+cldh2$Religion1<- paste(cldh2$Religiontype,cldh2$category)
+
+cldh2<- cldh2%>% mutate(Religion1 = ifelse(Religion1 == "Other Rel", "Other", ifelse(Religion1 == "Other Reln","Other",Religion1)))
+
+```
+
+
+```{r}
+library(tidyverse)
+library(sf)
+vic_map <- read_sf(here::here("data/E_AUGFN3_region.shp")) %>% 
+   # to match up with election data
+   mutate(DivisionNm = toupper(Elect_div)) 
+spc1_geomap <- read_sf("data/census2016_spca_vic_short.gpkg") %>%
+mutate(centroid = map(geom, st_centroid),
+centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+which = as.integer(st_intersects(centroid, vic_map)),
+Elect_div = ifelse(is.na(which),
+"None",
+vic_map$Elect_div[which])) %>%
+select(ced_code_2016, Elect_div)
+
+spc_geomap1<- as_tibble(spc1_geomap)
+
+spc_geomap1<-spc_geomap1%>% select(ced_code_2016,Elect_div)
+
+spc_geomap1<-spc_geomap1%>% mutate(ced_code_2016= as.character(ced_code_2016), Elect_div= as.character(Elect_div))
+
+```
+
+
+
+```{r}
+cldh3_join<- left_join(spc_geomap1,cldh2, by = c("ced_code_2016"="ced_code_2016"))
+```
+
+
+```{r}
+
+#Table join using geopack data to get division name of CED_code_2016
+
+cldh3_join%>% filter (Elect_div %in% c('Melbourne','Kooyong','Macnamara','Chisholm','Higgins','Goldstein','Hotham'))%>%
+   ggplot(aes(x=Religion1, y=count, fill= Religion1))+
+   geom_bar(stat = 'identity')+
+   
+   facet_grid(Elect_div ~., scales = 'free')+
+   theme(strip.placement = 'outside', text = element_text(size = 8, lineheight = 2))+
+   theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
+   ggtitle("Distribution of religious background/n in each electoral district of interest Chart7")+
+   xlab("Religion")+
+   theme(legend.title = element_text("Qualification"))
+```
+
+**Christianity as a whole ( 18 sects taking together ) constitute the major religion with almost all of the population following Christianity. Among all types of Christianity,  Catholic sects has absolute majority above 90%. Among non-Christian religion, presence of Buddhism, Hinduism, Islam and Judaism can be seen. There are some other religions with small section of people ( termed together as Others )**
+
+## Research Question 7
+### What are the level of the highest qualification the person has completed for each electoral division of interest? State one interesting observation with a possible explanation of that observation.
+
+
+
+```{r}
+library(sf)
+library(rgdal)
+library(tidyverse)
+
+EQ <- read_sf("data/census2016_eqa_vic_short.gpkg")
+
+EQ<- as_tibble(EQ)
+EQ1<- EQ %>% select(-geom)
+```
+
+```{r}
+
+
+EQ2<- EQ1%>% 
+      pivot_longer(cols = -ced_code_2016,
+                   names_to = "category",
+                   values_to = "count") %>% filter( !str_detect(category,"One") & !str_detect(category,"SB") & !str_detect(category,"Religious") & !str_detect(category,"M") & !str_detect(category,"F"))
+
+```
+
+```{r}
+EQ2_join<- left_join(spc_geomap1,EQ2, by = c("ced_code_2016"="ced_code_2016"))
+
+EQ2_join<-EQ2_join%>% separate(category, c("Qualification","category1","category2"), "_")
+```
+
+
+
+```{r}
+EQ2_join1<- EQ2_join%>% mutate(Qualification2= ifelse(Qualification == "P", category1,ifelse(Qualification== "Othr","Other",ifelse(Qualification== "Secondary","Secondary school", ifelse(Qualification== "Pre","Pre-School",ifelse(Qualification== "Infnts","Infants",ifelse(Qualification== "Cert","Cert123",Qualification)))))))%>%filter (Elect_div %in% c('Melbourne','Kooyong','Macnamara','Chisholm','Higgins','Goldstein','Hotham'),Qualification2!="P", Qualification2!= "lfs", Qualification2!= "Tot", Qualification2!="Type", Qualification2!="15")
+
+ggplot(EQ2_join1,aes(x= Qualification2, y= (count/sum(count))*100, fill= Qualification2))+
+   geom_bar(stat = 'identity')+
+   facet_grid(Elect_div ~., scales = 'free')+
+   theme(strip.placement = 'outside', text = element_text(size = 8, lineheight = 2))+
+   theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
+   xlab("Qualification")+
+   ylab("Percentage")+
+   ggtitle("Qualification Distribution Division wise  Chart8")
+```
+
+
+**All the divisions have population with Post Graduation as qualification and simultaneously have population with only Pre-School level qualification. But persons having qualification with Y12e code is maximum in all divisions and comprises more than 80 percent of population in each divisions.**
+
+**Explanations**
+**Post-grad is generally considered as higher rated among qualification and requires highly qualified faculties and related infra-structure. But in all divisions, persons with post-grad qualification are present, ensuring the availability of educational facilities in all divisions. Also, the percentage of post-grad is almost same for all division except for Hotham where it is little less.**
+
+**The basic qualification for better employment might be Y12e, so that majority avail this qualification as a need.**
+**Basic infra structure across the divisions for providing education is more or less same for upto Y12e level.**
+**May be education upto Y12e level is free or very less costly.**
+
+**Employability very high  post Y12e level of qualification. ( N.B.:on searching internet, Y12e qualification detail could not be found)**
+
+
+## List of data sources
+
+**Question 1 resources**
+- Region: Victoria(General Community Profile)
+- Data used:2016Census_G04_A_VIC_SA1.csv 
+
+**Question 2 resources**
+- Region: Victoria(General Community Profile)
+- Data used:2016Census_G04_A_VIC_SA1.csv 
+
+**Question 3 resources**
+- Region: Victoria(General Community Profile)
+- Data used:2016Census_G04_A_VIC_SA1.csv & 2016Census_G01_A_VIC_SA1.csv
+
+**Question 4 resources**
+- Region:Australia
+- Data used: elector-count-election-2016.csv & 2016Census_G04_A_VIC_SA1.csv 
+
+**Question 5 resources**
+- Region:Victoria
+- Data used: 2016Census_G08_A_VIC_SA1.csv 
+
+**Question 6 resources**
+- Region:Victoria
+- Data used: census2016_cldh_vic_short.gkpg
+
+**Question 7 resources**
+- Region:Victoria
+- Data used: census2016_eqa_vic_short.gkpg
+
+
+
+
+
+
+## Resources
+
+**Links**
+
+https://datapacks.censusdata.abs.gov.au/geopackages/
+
+
+https://datapacks.censusdata.abs.gov.au/datapacks/
+
+
+https://www.aec.gov.au/enrolling_to_vote/enrolment_stats/elector_count/index.htm
+
+R: A Language and Environment for Statistical Computing
+R Core Team
+R Foundation for Statistical Computing
+https://www.R-project.org/
+
+@tides
+@read
+@kable
+@nani
+@ggplot2
+
+
+
